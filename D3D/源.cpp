@@ -16,6 +16,7 @@
 //Define variables/constants//
 LPCTSTR WndClassName = "firstwindow";
 HWND hwnd = NULL;	//Sets windows handle to NULL
+HRESULT hr;
 const int Width = 800;		//window width
 const int Height = 600;		//window hegith
 
@@ -23,6 +24,12 @@ IDXGISwapChain* SwapChain;
 ID3D11Device* d3d11Device;
 ID3D11DeviceContext* d3d11DevCon;
 ID3D11RenderTargetView* renderTargetView;
+ID3D11Buffer * triangleVertBuffer;
+ID3D11VertexShader* VS;
+ID3D11PixelShader* PS;
+ID3D10Blob* VS_Buffer;
+ID3D10Blob* PS_Buffer;
+ID3D11InputLayout* verLayout;
 
 float red = 0.0f;
 float green = 0.0f;
@@ -55,7 +62,36 @@ bool InitScene();
 void UpdateScene();
 void DrawScene();
 
+//Vertex Structure and Vertex Layout (Input Layout)
+struct Vertex  //Overload Vertex Structure
+{
+	Vertex(){}
+	Vertex(float x , float y, float z):pos(x,y,z){}
+	XMFLOAT3 pos;
+};
 
+D3D11_INPUT_ELEMENT_DESC layout[] =
+{
+	{"POSITION",0,DXGI_FORMAT_R32G32B32A32_FLOAT,0,0,D3D11_INPUT_PER_VERTEX_DATA,0},
+};
+UINT numElements = ARRAYSIZE(layout); // hold the size of input layout array
+
+void CleanUp() {
+	//Release the COM objects we created
+	SwapChain->Release();
+	d3d11Device->Release();
+	d3d11DevCon->Release();
+	renderTargetView->Release();
+	triangleVertBuffer->Release();
+	PS->Release();
+	VS->Release();
+	VS_Buffer->Release();
+	PS_Buffer->Release();
+	verLayout->Release();
+
+}
+
+//-0------------------------------------------
 int WINAPI WinMain(HINSTANCE hInstance,		//Main windows function
 	HINSTANCE hPrevinstance,
 	LPSTR lpCmdLine,
@@ -90,7 +126,7 @@ int WINAPI WinMain(HINSTANCE hInstance,		//Main windows function
 //init directx
 bool InitializeDirect3d11App(HINSTANCE hInstance)
 {
-	
+
 	HRESULT hr;
 
 	//Describe Buffer
@@ -116,8 +152,8 @@ bool InitializeDirect3d11App(HINSTANCE hInstance)
 
 	//Describe our SwapChain
 	DXGI_SWAP_CHAIN_DESC swapChainDesc;
-	ZeroMemory(&swapChainDesc,sizeof(DXGI_SWAP_CHAIN_DESC));
-	swapChainDesc.BufferDesc= buffDesc;
+	ZeroMemory(&swapChainDesc, sizeof(DXGI_SWAP_CHAIN_DESC));
+	swapChainDesc.BufferDesc = buffDesc;
 	swapChainDesc.BufferCount = 1;
 	swapChainDesc.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;	//A DXGI_USAGE enumerated type describing the access the cpu has to the surface of the back buffer
 	swapChainDesc.Flags = DXGI_SWAP_CHAIN_FLAG_ALLOW_MODE_SWITCH;
@@ -182,6 +218,65 @@ void ReleaseObjects() {
 }
 
 bool InitScene() {
+	//Compile Shaders form shader file
+	hr = D3DX11CompileFromFile("Effectx.fx", 0, 0, "VS", "vs_5_0", 0, 0, 0, &VS_Buffer, 0, 0);
+	hr = D3DX11CompileFromFile("Effectx.fx", 0, 0, "PS", "ps_5_0", 0, 0, 0, &PS_Buffer,0,0);
+	
+	//Set Vertex and Pixel Shaders
+	d3d11DevCon->VSSetShader(VS, 0, 0);
+	d3d11DevCon->PSSetShader(PS, 0, 0);
+	
+	//Create the vertex buffer
+	Vertex v[] =
+	{
+		Vertex(0.0f,0.5f,0.5f),
+		Vertex(0.0f, -0.5f, 0.5f),
+		Vertex(-0.5f,-0.5f,0.5f)
+	};
+
+	D3D11_BUFFER_DESC vertexBufferDesc;
+	ZeroMemory(&vertexBufferDesc,sizeof(D3D11_BUFFER_DESC));
+	
+	vertexBufferDesc.Usage = D3D11_USAGE_DEFAULT;
+	vertexBufferDesc.ByteWidth = sizeof(Vertex) * 3;
+	vertexBufferDesc.CPUAccessFlags = 0;
+	vertexBufferDesc.MiscFlags = 0;
+
+	D3D11_SUBRESOURCE_DATA vertexBufferData;
+	ZeroMemory(&vertexBufferData, sizeof(D3D11_SUBRESOURCE_DATA));
+	hr = d3d11Device->CreateBuffer(&vertexBufferDesc, &vertexBufferData, &triangleVertBuffer);
+
+	//set the vertex buffer
+	UINT stride = sizeof(Vertex);
+	UINT offset = 0;
+	d3d11DevCon->IASetVertexBuffers(0, 1, &triangleVertBuffer, &stride, &offset);
+
+	//Create the Input Layout
+	hr = d3d11Device->CreateInputLayout(layout, numElements, VS_Buffer->GetBufferPointer(), VS_Buffer->GetBufferSize(), &verLayout);
+
+	//Set the Input layout
+	d3d11DevCon->IASetInputLayout(verLayout);
+
+	//Set Primitive Topology
+	d3d11DevCon->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+
+	//Create the Viewport
+	D3D11_VIEWPORT viewport;
+	ZeroMemory(&viewport, sizeof(D3D11_VIEWPORT));
+
+	viewport.TopLeftX = 0;
+	viewport.TopLeftY = 0;
+	viewport.Height = Height;
+	viewport.Width = Width;
+	
+
+	//Set the ViewPort
+	d3d11DevCon->RSSetViewports(1, &viewport);
+
+	return true;
+
+
+
 	return true;
 }
 
@@ -202,7 +297,7 @@ void UpdateScene() {
 void DrawScene() {
 	//Clear our backbuffer to the update color
 	D3DXCOLOR bgColor(red, green, blue, 1.0f);
-	
+
 	d3d11DevCon->ClearRenderTargetView(renderTargetView, bgColor);
 
 	//Present the backbuffer to the screen;
@@ -235,7 +330,7 @@ bool InitializeWindow(
 
 	if (!RegisterClassEx(&wc))	//Register out window class
 	{
-			//if registration failed, dispaly error
+		//if registration failed, dispaly error
 		MessageBox(NULL, "Error registering class",
 			"Error", MB_OK | MB_ICONERROR);
 		return false;
